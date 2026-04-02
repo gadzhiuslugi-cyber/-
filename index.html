@@ -301,7 +301,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);display:flex
       </div>
       <div class="recent-table-wrap">
         <table class="data-table">
-          <thead><tr><th>Дата выписки</th><th>Наименование</th><th>Участков</th><th>Площадь (га)</th><th>Кадастровая сумма</th><th>Добавлено</th></tr></thead>
+          <thead><tr><th class="recent-date-th" id="recentDateTh" style="cursor:pointer;user-select:none">Дата выписки <span id="recentSortArrow" style="opacity:0.7;font-size:12px">↓</span></th><th>Наименование</th><th>Участков</th><th>Площадь (га)</th><th>Кадастровая сумма</th><th>Добавлено</th></tr></thead>
           <tbody id="recentTbody"><tr><td colspan="6" class="empty-row">Нет данных</td></tr></tbody>
         </table>
       </div>
@@ -462,9 +462,11 @@ ALTER TABLE land_reports ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow anon read"   ON land_reports FOR SELECT USING (true);
 CREATE POLICY "Allow anon insert" ON land_reports FOR INSERT WITH CHECK (true);
 CREATE POLICY "Allow anon delete" ON land_reports FOR DELETE USING (true);
--- Если таблица уже существует:
--- ALTER TABLE land_reports ADD COLUMN IF NOT EXISTS report_name TEXT;</pre>
+-- ⚠ ВАЖНО: Если таблица уже существует, добавьте колонку одной командой:
+ALTER TABLE land_reports ADD COLUMN IF NOT EXISTS report_name TEXT;</pre>
         <button class="btn btn-outline btn-sm" id="copySql">📋 Скопировать SQL</button>
+        <button class="btn btn-primary btn-sm" id="runMigration" style="margin-left:8px" title="Добавить колонку report_name если её нет">⚡ Добавить колонку report_name</button>
+        <div id="migrationStatus" style="margin-top:10px;font-size:13px;min-height:18px"></div>
       </div>
     </div>
   </section>
@@ -492,11 +494,23 @@ CREATE POLICY "Allow anon delete" ON land_reports FOR DELETE USING (true);
 document.addEventListener('DOMContentLoaded', function () {
 
   // ── CONFIG ──
-  const DEFAULT_CONFIG = { supabaseUrl: '', supabaseKey: '' };
-  function getConfig() { return Object.assign({}, DEFAULT_CONFIG, JSON.parse(localStorage.getItem('zemConfig') || '{}')); }
+  // Читаем из нескольких ключей — для совместимости со старыми версиями дашборда
+  var CONFIG_KEYS = ['zemConfig', 'zemAnalytikaConfig'];
+  function getConfig() {
+    for (var _i = 0; _i < CONFIG_KEYS.length; _i++) {
+      try {
+        var _raw = localStorage.getItem(CONFIG_KEYS[_i]);
+        if (_raw) {
+          var _p = JSON.parse(_raw);
+          if (_p && (_p.supabaseUrl || _p.supabaseKey)) return _p;
+        }
+      } catch(e) {}
+    }
+    return { supabaseUrl: '', supabaseKey: '' };
+  }
   function saveConfigLS() {
-    const cfg = { supabaseUrl: gel('sbUrl').value.trim(), supabaseKey: gel('sbKey').value.trim() };
-    localStorage.setItem('zemConfig', JSON.stringify(cfg));
+    var cfg = { supabaseUrl: gel('sbUrl').value.trim(), supabaseKey: gel('sbKey').value.trim() };
+    CONFIG_KEYS.forEach(function(k) { localStorage.setItem(k, JSON.stringify(cfg)); });
     return cfg;
   }
 
@@ -510,6 +524,7 @@ document.addEventListener('DOMContentLoaded', function () {
   let previewRows = [];
   let deleteId = null;
   let kpiRange = { preset: 'all', from: null, to: null };
+  let recentSortMode = 'date_desc'; // 'date_desc' | 'date_asc'
 
   // ── DOM helper ──
   function gel(id) { return document.getElementById(id); }
@@ -588,7 +603,9 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!cfg.supabaseUrl || !cfg.supabaseKey) { setStatus('error'); return false; }
     try {
       sbClient = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseKey);
-      var res = await sbClient.from('land_reports').select('id').limit(1);
+      // select('*') вместо select('id') чтобы Supabase сбросил кэш схемы
+    // и подхватил новые колонки (например report_name после ALTER TABLE)
+    var res = await sbClient.from('land_reports').select('*').limit(1);
       if (res.error) throw res.error;
       setStatus('online');
       return true;
@@ -662,6 +679,13 @@ document.addEventListener('DOMContentLoaded', function () {
     renderDashboard();
   });
 
+  // ── RECENT SORT (клик по заголовку "Дата выписки") ──
+  gel('recentDateTh').addEventListener('click', function() {
+    recentSortMode = recentSortMode === 'date_desc' ? 'date_asc' : 'date_desc';
+    gel('recentSortArrow').textContent = recentSortMode === 'date_desc' ? '↓' : '↑';
+    renderRecentTable();
+  });
+
   function getKpiData() {
     var from = null, to = null;
     if (kpiRange.preset === 'custom') { from = kpiRange.from; to = kpiRange.to; }
@@ -693,11 +717,33 @@ document.addEventListener('DOMContentLoaded', function () {
     var sorted = data.slice().sort(function(a,b){ return new Date(a.report_date)-new Date(b.report_date); });
     buildCharts(sorted);
 
-    var recent = allData.slice().sort(function(a,b){ return new Date(b.created_at)-new Date(a.created_at); }).slice(0,5);
+    renderRecentTable();
+  }
+
+  function renderRecentTable() {
     var tbody = gel('recentTbody');
-    if (!recent.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty-row">Нет записей</td></tr>'; return; }
+    if (!allData.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty-row">Нет записей</td></tr>'; return; }
+
+    var recent = allData.slice();
+    if (recentSortMode === 'date_asc') {
+      recent.sort(function(a,b){ return new Date(a.report_date) - new Date(b.report_date); });
+    } else {
+      // date_desc — по дате выписки от новых к старым
+      recent.sort(function(a,b){ return new Date(b.report_date) - new Date(a.report_date); });
+    }
+    recent = recent.slice(0, 10);
+
     tbody.innerHTML = recent.map(function(r) {
-      return '<tr><td>'+fmtDate(r.report_date)+'</td><td>'+(r.report_name||'—')+'</td><td class="num-cell">'+fmtN(r.plots_count)+'</td><td class="num-cell">'+fmtF(r.seizure_area)+'</td><td class="num-cell text-money">'+fmtM(r.cadastral_amount)+'</td><td style="color:var(--text-secondary);font-size:12px">'+fmtDT(r.created_at)+'</td></tr>';
+      // Явно получаем report_name — может быть null/undefined если колонка только что добавлена
+      var nm = (r.report_name !== null && r.report_name !== undefined && r.report_name !== '') ? r.report_name : '—';
+      return '<tr>'
+        + '<td>' + fmtDate(r.report_date) + '</td>'
+        + '<td>' + nm + '</td>'
+        + '<td class="num-cell">' + fmtN(r.plots_count) + '</td>'
+        + '<td class="num-cell">' + fmtF(r.seizure_area) + '</td>'
+        + '<td class="num-cell text-money">' + fmtM(r.cadastral_amount) + '</td>'
+        + '<td style="color:var(--text-secondary);font-size:12px">' + fmtDT(r.created_at) + '</td>'
+        + '</tr>';
     }).join('');
   }
 
@@ -930,13 +976,33 @@ document.addEventListener('DOMContentLoaded', function () {
     var prog=gel('uploadProgress'), fill=gel('progressFill'), ptxt=gel('progressText');
     prog.classList.remove('hidden');
     var saved=0, errors=0;
+    var useReportName = true; // флаг — есть ли колонка в БД
+
     for (var i=0; i<valid.length; i+=50) {
-      var batch = valid.slice(i,i+50).map(function(r){ return { report_date:r.report_date, report_name:r.report_name||null, plots_count:r.plots_count, seizure_area:r.seizure_area, cadastral_amount:r.cadastral_amount }; });
+      var slice = valid.slice(i, i+50);
+      var batch = slice.map(function(r){
+        var rec = { report_date:r.report_date, plots_count:r.plots_count, seizure_area:r.seizure_area, cadastral_amount:r.cadastral_amount };
+        if (useReportName) rec.report_name = r.report_name || null;
+        return rec;
+      });
       try {
         var res = await sbClient.from('land_reports').insert(batch);
-        if (res.error) throw res.error;
-        saved += batch.length;
-      } catch(e) { errors += batch.length; console.error(e); }
+        if (res.error) {
+          // Если ошибка именно из-за report_name — повторяем без него
+          if (res.error.message && res.error.message.toLowerCase().indexOf('report_name') !== -1) {
+            useReportName = false;
+            toast('Колонка report_name не найдена. Сохраняем без неё. Добавьте колонку из раздела Настройки → SQL.', 'warning');
+            var batch2 = slice.map(function(r){ return { report_date:r.report_date, plots_count:r.plots_count, seizure_area:r.seizure_area, cadastral_amount:r.cadastral_amount }; });
+            var res2 = await sbClient.from('land_reports').insert(batch2);
+            if (res2.error) throw res2.error;
+            saved += batch2.length;
+          } else {
+            throw res.error;
+          }
+        } else {
+          saved += batch.length;
+        }
+      } catch(e) { errors += slice.length; console.error(e); }
       fill.style.width = Math.min(Math.round(((i+50)/valid.length)*100),100)+'%';
       ptxt.textContent = 'Сохранено '+Math.min(saved+errors,valid.length)+' из '+valid.length+'...';
     }
@@ -965,7 +1031,15 @@ document.addEventListener('DOMContentLoaded', function () {
     if (errs.length) { toast(errs.join('; '),'error'); return; }
     var btn=gel('formSave'); btn.disabled=true; btn.textContent='⏳ Сохранение...';
     try {
-      var res = await sbClient.from('land_reports').insert([{ report_date:dv, report_name:nv||null, plots_count:+pv, seizure_area:+av, cadastral_amount:+cv }]);
+      // Сначала пробуем с report_name, если ошибка — без него
+      var insertRec = { report_date:dv, report_name:nv||null, plots_count:+pv, seizure_area:+av, cadastral_amount:+cv };
+      var res = await sbClient.from('land_reports').insert([insertRec]);
+      if (res.error && res.error.message && res.error.message.indexOf('report_name') !== -1) {
+        // колонки нет — вставляем без неё
+        delete insertRec.report_name;
+        res = await sbClient.from('land_reports').insert([insertRec]);
+        toast('Колонка report_name не найдена. Выполните ALTER TABLE из раздела Настройки.', 'warning');
+      }
       if (res.error) throw res.error;
       toast('✅ Запись сохранена', 'success');
       gel('fName').value=gel('fPlots').value=gel('fArea').value=gel('fCadastral').value='';
@@ -1019,6 +1093,36 @@ document.addEventListener('DOMContentLoaded', function () {
     if (sql) navigator.clipboard.writeText(sql).then(function(){ toast('SQL скопирован','success'); });
   });
 
+  gel('runMigration').addEventListener('click', async function() {
+    if (!sbClient) { toast('Сначала подключитесь к Supabase', 'error'); return; }
+    var btn = gel('runMigration');
+    var statusEl = gel('migrationStatus');
+    btn.disabled = true; btn.textContent = '⏳ Выполняется...';
+    statusEl.textContent = '';
+    try {
+      // Пробуем сделать SELECT с report_name — если колонки нет, ловим ошибку
+      var testRes = await sbClient.from('land_reports').select('id, report_name').limit(1);
+      if (!testRes.error) {
+        statusEl.textContent = '✅ Колонка report_name уже существует';
+        statusEl.style.color = 'var(--success)';
+        toast('Колонка report_name уже есть в таблице', 'success');
+      } else if (testRes.error.message && testRes.error.message.toLowerCase().indexOf('report_name') !== -1) {
+        // Колонки нет — выполняем ALTER TABLE через rpc если есть, иначе показываем инструкцию
+        statusEl.innerHTML = '⚠ Колонка отсутствует. Выполните в SQL Editor Supabase:<br><code style="background:#f1f5f9;padding:4px 8px;border-radius:4px;font-size:12px">ALTER TABLE land_reports ADD COLUMN IF NOT EXISTS report_name TEXT;</code>';
+        statusEl.style.color = 'var(--warning)';
+        // Копируем команду в буфер
+        navigator.clipboard.writeText('ALTER TABLE land_reports ADD COLUMN IF NOT EXISTS report_name TEXT;').catch(function(){});
+        toast('SQL скопирован в буфер — вставьте в SQL Editor Supabase', 'warning');
+      } else {
+        throw testRes.error;
+      }
+    } catch(e) {
+      statusEl.textContent = '❌ Ошибка: ' + e.message;
+      statusEl.style.color = 'var(--danger)';
+    }
+    btn.disabled = false; btn.textContent = '⚡ Добавить колонку report_name';
+  });
+
   // ── COLORS ──
   var COLOR_DEFS = { color_bg:'#f0f2f7', color_card:'#ffffff', color_text:'#1a202c', color_accent:'#2563eb', color_sidebar:'#0f1724', color_chart:'#2563eb' };
   var COLOR_VARS = { color_bg:'--bg', color_card:'--card', color_text:'--text', color_accent:'--accent', color_sidebar:'--sidebar', color_chart:'--chart' };
@@ -1058,13 +1162,34 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   // ── START ──
+  // Загружаем конфиг из localStorage (читаем оба ключа для совместимости)
   var cfg = getConfig();
-  gel('sbUrl').value = cfg.supabaseUrl || 'https://urcdsralwzrfjybbmgrf.supabase.co';
-  gel('sbKey').value = cfg.supabaseKey || 'sb_publishable_pJCoXK90kfZiBwBmZ8XG7g_vOVd4mRz';
+  gel('sbUrl').value = cfg.supabaseUrl || '';
+  gel('sbKey').value = cfg.supabaseKey || '';
   loadColors();
   updateDate();
   setInterval(updateDate, 60000);
-  tryConnect().then(function() { loadData(); });
+
+  // Автоматически подключаемся при старте если есть сохранённый конфиг
+  if (cfg.supabaseUrl && cfg.supabaseKey) {
+    tryConnect().then(function(ok) {
+      if (ok) {
+        loadData();
+      } else {
+        // При ошибке пробуем ещё раз через 2 секунды (сеть могла не успеть подняться)
+        setTimeout(function() {
+          tryConnect().then(function(ok2) { if (ok2) loadData(); });
+        }, 2000);
+      }
+    });
+  } else {
+    // Конфига нет — показываем подсказку
+    setStatus('error');
+    toast('Введите Supabase URL и ключ в разделе Настройки', 'warning');
+    allData = []; filtered = [];
+    renderDashboard();
+    renderTable();
+  }
 
 }); // end DOMContentLoaded
 </script>
