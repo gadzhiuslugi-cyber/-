@@ -1164,8 +1164,8 @@ document.addEventListener('DOMContentLoaded', function () {
   // ── START ──
   // Загружаем конфиг из localStorage (читаем оба ключа для совместимости)
   var cfg = getConfig();
-  gel('sbUrl').value = cfg.supabaseUrl || '';
-  gel('sbKey').value = cfg.supabaseKey || '';
+  gel('sbUrl').value = cfg.supabaseUrl || 'https://urcdsralwzrfjybbmgrf.supabase.co';
+  gel('sbKey').value = cfg.supabaseKey || 'sb_publishable_pJCoXK90kfZiBwBmZ8XG7g_vOVd4mRz';
   loadColors();
   updateDate();
   setInterval(updateDate, 60000);
