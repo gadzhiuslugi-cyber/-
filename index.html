@@ -269,7 +269,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);display:flex
       </div>
       <div class="kpi-card">
         <div class="kpi-icon">📐</div>
-        <div><div class="kpi-label">Суммарная площадь</div><div class="kpi-value" id="kpiArea">—</div><div class="kpi-sub">га</div></div>
+        <div><div class="kpi-label">Суммарная площадь</div><div class="kpi-value" id="kpiArea">—</div><div class="kpi-sub">м²</div></div>
       </div>
       <div class="kpi-card">
         <div class="kpi-icon">💰</div>
@@ -301,7 +301,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);display:flex
       </div>
       <div class="recent-table-wrap">
         <table class="data-table">
-          <thead><tr><th class="recent-date-th" id="recentDateTh" style="cursor:pointer;user-select:none">Дата выписки <span id="recentSortArrow" style="opacity:0.7;font-size:12px">↓</span></th><th>Наименование</th><th>Участков</th><th>Площадь (га)</th><th>Кадастровая сумма</th><th>Добавлено</th></tr></thead>
+          <thead><tr><th class="recent-date-th" id="recentDateTh" style="cursor:pointer;user-select:none">Дата выписки <span id="recentSortArrow" style="opacity:0.7;font-size:12px">↓</span></th><th>Наименование</th><th>Участков</th><th>Площадь (м²)</th><th>Кадастровая сумма</th><th>Добавлено</th></tr></thead>
           <tbody id="recentTbody"><tr><td colspan="6" class="empty-row">Нет данных</td></tr></tbody>
         </table>
       </div>
@@ -335,7 +335,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);display:flex
       </div>
       <div class="table-wrap">
         <table class="data-table">
-          <thead><tr><th>#</th><th>Дата</th><th>Наименование</th><th>Участков</th><th>Площадь (га)</th><th>Кадастровая сумма</th><th>Статус</th></tr></thead>
+          <thead><tr><th>#</th><th>Дата</th><th>Наименование</th><th>Участков</th><th>Площадь (м²)</th><th>Кадастровая сумма</th><th>Статус</th></tr></thead>
           <tbody id="previewTbody"></tbody>
         </table>
       </div>
@@ -364,7 +364,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);display:flex
           <input class="form-input" type="number" id="fPlots" min="0" placeholder="12" />
         </div>
         <div class="form-group">
-          <label class="form-label" for="fArea">Площадь самозахвата (га) <span class="required">*</span></label>
+          <label class="form-label" for="fArea">Площадь самозахвата (м²) <span class="required">*</span></label>
           <input class="form-input" type="number" id="fArea" min="0" step="0.01" placeholder="3.45" />
         </div>
         <div class="form-group" style="grid-column:1/-1">
@@ -399,7 +399,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);display:flex
             <th class="sortable" data-col="report_date">Дата выписки <span class="sort-icon">⇅</span></th>
             <th class="sortable" data-col="report_name">Наименование <span class="sort-icon">⇅</span></th>
             <th class="sortable" data-col="plots_count">Участков <span class="sort-icon">⇅</span></th>
-            <th class="sortable" data-col="seizure_area">Площадь (га) <span class="sort-icon">⇅</span></th>
+            <th class="sortable" data-col="seizure_area">Площадь (м²) <span class="sort-icon">⇅</span></th>
             <th class="sortable" data-col="cadastral_amount">Кадастровая сумма <span class="sort-icon">⇅</span></th>
             <th class="sortable" data-col="created_at">Добавлено <span class="sort-icon">⇅</span></th>
             <th>Действия</th>
@@ -750,7 +750,7 @@ document.addEventListener('DOMContentLoaded', function () {
   // ── CHARTS ──
   function buildCharts(sorted) {
     buildChart('plots',     sorted, 'plots_count',      'Количество участков');
-    buildChart('area',      sorted, 'seizure_area',     'Площадь (га)');
+    buildChart('area',      sorted, 'seizure_area',     'Площадь (м²)');
     buildChart('cadastral', sorted, 'cadastral_amount', 'Кадастровая сумма');
   }
 
@@ -784,7 +784,7 @@ document.addEventListener('DOMContentLoaded', function () {
             callbacks: { label: function(ctx) {
               var v = ctx.raw;
               if (field === 'cadastral_amount') return ' ' + fmtM(v) + ' руб';
-              if (field === 'seizure_area')     return ' ' + fmtF(v) + ' га';
+              if (field === 'seizure_area')     return ' ' + fmtF(v) + ' м²';
               return ' ' + fmtN(v);
             }}
           }
@@ -1053,7 +1053,7 @@ document.addEventListener('DOMContentLoaded', function () {
   function exportToExcel() {
     if (!filtered.length) { toast('Нет данных для выгрузки','warning'); return; }
     var fv=gel('filterFrom').value, tv=gel('filterTo').value;
-    var rows = filtered.map(function(r){ return { 'Дата выписки':r.report_date,'Наименование выписки':r.report_name||'','Количество участков':r.plots_count,'Общая площадь (га)':Number(r.seizure_area),'Кадастровая сумма (руб)':Number(r.cadastral_amount),'Дата добавления':r.created_at?new Date(r.created_at).toLocaleString('ru-RU'):'' }; });
+    var rows = filtered.map(function(r){ return { 'Дата выписки':r.report_date,'Наименование выписки':r.report_name||'','Количество участков':r.plots_count,'Общая площадь (м²)':Number(r.seizure_area),'Кадастровая сумма (руб)':Number(r.cadastral_amount),'Дата добавления':r.created_at?new Date(r.created_at).toLocaleString('ru-RU'):'' }; });
     var ws = XLSX.utils.json_to_sheet(rows);
     ws['!cols']=[{wch:15},{wch:34},{wch:22},{wch:20},{wch:26},{wch:22}];
     var wb = XLSX.utils.book_new();
@@ -1064,7 +1064,7 @@ document.addEventListener('DOMContentLoaded', function () {
       ['Отчёт сформирован:',new Date().toLocaleString('ru-RU')],
       ['Период от:',fv||'начала'],['Период до:',tv||'сегодня'],
       ['Всего записей:',filtered.length],
-      ['Сумма участков:',sumPlots],['Суммарная площадь (га):',sumArea],
+      ['Сумма участков:',sumPlots],['Суммарная площадь (м²):',sumArea],
       ['Суммарная кадастровая сумма (руб):',sumCad]
     ]);
     ws2['!cols']=[{wch:38},{wch:28}];
